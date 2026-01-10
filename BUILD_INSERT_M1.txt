@@ -1,0 +1,14 @@
+Build insert_m1.exe (Mother 1 only)
+
+Option A: MinGW-w64 (recommended)
+  gcc -O2 -std=gnu++03 -x c++ -o insert_m1.exe source/insert_m1.c
+
+Notes:
+- insert_m1.c uses 'int&' references, so compile it as C++ (or rename to .cpp).
+- Put the resulting insert_m1.exe in the same folder as i_m1_only.bat.
+
+Option B: MSVC (Developer Command Prompt)
+  cl /O2 /EHsc /TP source\insert_m1.c /Fe:insert_m1.exe
+
+Run:
+  i_m1_only.bat
