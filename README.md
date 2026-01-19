@@ -367,6 +367,7 @@ If any stage fails, the build script **aborts immediately** to prevent partially
 - Original Mother 1+2 GBA fan translation team **jeffman** and **tomato** 
 - Tooling and ASM work by the original project authors  
 - Cleanup, refactor, and M1-only isolation work by **InfiniteEnd**
+- ips.c tool by the Shaver of Yaks **mrehkopf**
 - Reverse-engineering work on the Mother 1+2 GBA ROM boot process by **tonebender**.
 
 This project builds on prior community work with respect and attribution.
