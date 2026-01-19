@@ -106,29 +106,39 @@ In short:
 The purpose of this project is **not** to re-translate Mother 1, nor to alter Mother 2 in any way.  
 Instead, it isolates and stabilizes the tooling required to apply **Mother 1–specific English text and ASM patches only**, while leaving the Mother 2 side of the ROM completely untouched.
 
-This work is intended as a **clean foundation for preservation, maintenance, and future work**.
+This work is intended as a **clean foundation for preservation, maintenance, and future work**, and to serve as a reliable building block for higher-level wrapper or orchestration projects.
+
+---
 
 ## What This Patchkit Does
 
 ✅ Applies Mother 1 English text  
 ✅ Applies Mother 1 window/layout ASM changes  
 ✅ Applies Mother 1 uncensor/restoration graphics  
+✅ Applies a **final IPS selector** to produce a standalone Mother 1 build  
 ✅ Builds cleanly with no unused dependencies  
 ✅ Leaves Mother 2 code, data, and text untouched  
 
 ❌ Does **not** modify Mother 2  
-❌ Does **not** apply splash screens or intros  
+❌ Does **not** inject splash screens or intros  
 ❌ Does **not** rely on Mother 2 assets or tables  
+❌ Does **not** merge or entangle Mother 1 and Mother 2 logic  
+
+---
 
 ## High-Level Build Pipeline
 
-The patch process is intentionally simple:
+The patch process is intentionally simple and strictly ordered:
 
-1. A clean **Mother 1+2 (Japan)** ROM is copied to a working file  
+1. A clean **Mother 1+2 (Japan)** ROM is copied to a temporary working file  
 2. `xkas` applies **Mother 1–only ASM patches**  
-3. `insert_m1.exe` inserts **Mother 1 English text only**  
+3. `insert_m1.exe` inserts **Mother 1 English text and data only**  
+4. A final **IPS selector patch** is applied to produce a standalone **Mother 1 autoboot ROM**
 
-If ASM assembly fails, the process **aborts immediately** to prevent partially patched ROMs.
+If ASM assembly or text insertion fails, the process **aborts immediately** to prevent partially patched or ambiguous outputs.
+
+The IPS step is intentionally performed **last** and acts only as a **final selector/routing stage**, not as part of the translation or patch logic itself.
+
 
 ## Design Philosophy
 
@@ -191,7 +201,12 @@ This patchkit can be used as-is (prebuilt tools included), or you can rebuild th
 1. Place your clean `m12.gba` ROM in the repository root.
 2. Run the build script: i_m1_only.bat
 3. Output:
-- The script creates `test.gba`, which is your patched working ROM.
+- The script produces `Mother1_only.gba`, a standalone **Mother 1 autoboot ROM**.
+- Temporary working files (e.g. `test.gba`) are cleaned up automatically.
+
+No Mother 2 data, code, or text is modified in the process.
+
+---
 
 ## Rebuilding `insert_m1.exe` (Windows)
 
@@ -202,18 +217,115 @@ The file `source/insert_m1.c` uses C++ references (`int&`), so it must be compil
 1. Install **MinGW-w64** and ensure `gcc` is available in your PATH.
 2. From the repository root, run: gcc -O2 -std=gnu++03 -x c++ -o insert_m1.exe source/insert_m1.c
 3. Ensure `insert_m1.exe` is located in the same directory as `i_m1_only.bat`.
-4. Run the patch: i_m1_only.bat
+4. Run the build script: i_m1_only.bat
 
 ### Option B: MSVC (Developer Command Prompt)
 
 1. Open **Developer Command Prompt for Visual Studio**.
 2. From the repository root, run: cl /O2 /EHsc /TP source\insert_m1.c /Fe:insert_m1.exe
-3. Run the patch: i_m1_only.bat
+3. Run the build script: i_m1_only.bat
+
+## Rebuilding `ips.exe` (Windows)
+
+The file `source/ips.c` is a small, standalone IPS patcher used as the **final selector stage** in the build pipeline.  
+It applies a prebuilt IPS patch to a completed ROM and produces the final output file.
+
+Rebuilding `ips.exe` is optional for most users, as a prebuilt binary is included for convenience.
+
+### Option A: MinGW-w64 (Recommended)
+
+1. Install **MinGW-w64** and ensure `gcc` is available in your PATH.
+2. From the repository root, run: gcc -O2 -o ips.exe source/ips.c
+3. Ensure `ips.exe` is located in the same directory as `i_m1_only.bat`.
+4. Run the build script: i_m1_only.bat
+
+
+### Option B: MSVC (Developer Command Prompt)
+
+1. Open **Developer Command Prompt for Visual Studio**.
+2. From the repository root, run: cl /O2 source\ips.c /Fe:ips.exe
+3. Run the build script: i_m1_only.bat
+
+
+### Notes
+
+- `ips.exe` is intentionally simple and self-contained.
+- It performs **no translation or ASM logic**.
+- It is used only to apply a final IPS selector patch after all Mother 1 content has been inserted.
+- Advanced users may replace this tool with another IPS-compatible patcher if desired, provided it supports the same input/output behavior.
+
+## IPS Selector / Autoboot Behaviour (Technical Summary)
+
+The Mother 1+2 GBA ROM boots through a small state-driven intro sequence before reaching the game selection menu.  
+This project relies on a **prebuilt IPS patch** (tomato-m12-mother-1-only.ips) created by tonebender using Ghidra a reverse-engineering framework that modifies this boot flow to bypass the cartridge menu and autoboot **Mother 1 only**, without altering any Mother 1 translation logic.
+
+### Boot Flow Overview
+
+- The ROM entry point initializes a function pointer (`DAT_030012d0`) that controls which routine runs each frame.
+- Boot progresses through a sequence of intro handlers:
+  1. Nintendo logo
+  2. “MOTHER 1+2” splash
+  3. Game selection screen
+
+Each stage updates `DAT_030012d0` to point to the next handler.
+
+### Key Boot Functions
+
+- `FUN_08013878`  
+  Central routine responsible for displaying:
+  - Nintendo screen
+  - “MOTHER 1+2” splash
+  - Game selection menu  
+  (Behaviour determined by a parameter value.)
+
+- `UndefinedFunction_080137a4`  
+  Displays the Nintendo logo and advances the boot state.
+
+- `UndefinedFunction_080137c0`  
+  Displays the “MOTHER 1+2” splash screen.
+
+- `UndefinedFunction_08013740`  
+  Displays the game selection screen and launches Mother 1 or Mother 2 depending on an internal flag.
+
+### No-Op Helpers
+
+Two simple functions are useful for neutralizing behaviour without breaking control flow:
+
+- `FUN_08000754`  
+  No arguments, no return — used to safely replace calls that only perform side effects (e.g. drawing screens).
+
+- `FUN_080f8ca4`  
+  No arguments, returns `1` — used when a return value is required but logic should be bypassed.
+
+### Selector Patch Strategy
+
+The IPS selector used by this project:
+
+- Replaces specific calls to `FUN_08013878` with no-ops
+- Skips all visual intro and menu logic
+- Allows initialization code to run normally
+- Forces execution directly into the Mother 1 launch path
+
+Importantly:
+
+- **Mother 1 logic, data, and translation are not modified**
+- **Mother 2 code is not altered or depended upon**
+- The IPS patch functions purely as a **final routing/selection step**
+
+### Project Scope Note
+
+While similar techniques can be used to autoboot Mother 2, this project intentionally applies **only the Mother 1 selector IPS**.  
+Mother 2 behaviour is documented here solely for technical context and is not used or modified by this patchkit.
+
+
+
+---
 
 ## Linux / macOS Notes
 
-This repository ships Windows-native tools (`xkas.exe`, `insert_m1.exe`) and a Windows batch script (`i_m1_only.bat`).  
-Linux and macOS users can still build the text inserter, but applying the ASM patch requires additional setup.
+This repository currently ships Windows-native tools (`xkas.exe`, `insert_m1.exe`, `ips.exe`) and a Windows batch script (`i_m1_only.bat`).
+
+Linux and macOS users can still build the text inserter, but applying the full pipeline requires additional setup.
 
 ### Building the Text Inserter on Linux / macOS
 
@@ -221,32 +333,41 @@ From the repository root: g++ -O2 -std=gnu++03 -o insert_m1 source/insert_m1.c
 
 This produces: ./insert_m1
 
+
 ### Applying the ASM Patch (`m12.asm`)
 
 The ASM patch uses **xkas** syntax.
 
 On Linux or macOS, you must either:
 
-- Run `xkas.exe` through a Wine environment, **or**
-- Port the ASM to a compatible modern assembler (advanced users only).
+- Run `xkas.exe` and `ips.exe` through a Wine environment, **or**
+- Port the ASM and IPS steps to compatible modern tools (advanced users only).
 
 At present, the officially supported and tested workflow is **Windows via `i_m1_only.bat`**.
+
+---
 
 ## Expected Build Behaviour
 
 When the build succeeds:
 
 - `xkas` applies all **Mother 1–only ASM patches**
-- `insert_m1.exe` inserts **Mother 1 English text**
-- The resulting ROM (`test.gba`) boots and runs correctly
+- `insert_m1.exe` inserts **Mother 1 English text and data**
+- A final **IPS selector patch** is applied
+- The resulting ROM (`Mother1_only.gba`) autoboots directly into **Mother 1**
+- Temporary working files are removed automatically
 
-If ASM assembly fails, the build script **aborts immediately** to prevent partially patched ROMs.
+If any stage fails, the build script **aborts immediately** to prevent partially patched or ambiguous ROMs.
+
+
+
 
 ## Credits & Acknowledgements
 
-- Original Mother 1+2 GBA fan translation team  
+- Original Mother 1+2 GBA fan translation team **jeffman** and **tomato** 
 - Tooling and ASM work by the original project authors  
 - Cleanup, refactor, and M1-only isolation work by **InfiniteEnd**
+- Reverse-engineering work on the Mother 1+2 GBA ROM boot process by **tonebender**.
 
 This project builds on prior community work with respect and attribution.
 
